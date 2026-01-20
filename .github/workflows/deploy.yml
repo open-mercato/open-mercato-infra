@@ -1,0 +1,119 @@
+name: Deploy Dokploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ansible/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: 'Playbook to run'
+        required: true
+        default: 'playbook.yml'
+        type: choice
+        options:
+          - playbook.yml
+          - harden.yml
+
+env:
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+  ANSIBLE_FORCE_COLOR: "True"
+
+jobs:
+  deploy:
+    name: Deploy to Hetzner VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Install Ansible Galaxy collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Install sshpass (for passphrase-protected keys)
+        if: ${{ secrets.SSH_KEY_PASSPHRASE != '' }}
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Set up SSH agent
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Start ssh-agent
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+          # Add key to agent (supports passphrase via SSH_KEY_PASSPHRASE secret)
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]; then
+            SSHPASS="${{ secrets.SSH_KEY_PASSPHRASE }}" sshpass -e -P "passphrase" ssh-add ~/.ssh/deploy_key
+          else
+            ssh-add ~/.ssh/deploy_key
+          fi
+          rm -f ~/.ssh/deploy_key
+
+      - name: Verify SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "echo 'SSH connection successful'"
+
+      - name: Determine playbook to run
+        id: playbook
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "playbook=${{ github.event.inputs.playbook }}" >> $GITHUB_OUTPUT
+          else
+            echo "playbook=playbook.yml" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Ansible playbook
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory/production.ini ${{ steps.playbook.outputs.playbook }} \
+            -e "ansible_host=${{ secrets.SERVER_IP }}" \
+            -e "ansible_user=${{ secrets.SERVER_USER }}" \
+            -e "skip_confirmation=true" \
+            -v
+
+      - name: Cleanup SSH agent
+        if: always()
+        run: |
+          ssh-agent -k 2>/dev/null || true
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "## Deployment Successful! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Playbook:** ${{ steps.playbook.outputs.playbook }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Server:** ${{ secrets.SERVER_IP }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.playbook.outputs.playbook }}" == "playbook.yml" ]; then
+            echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. Access Dokploy at \`http://${{ secrets.SERVER_IP }}:3000\`" >> $GITHUB_STEP_SUMMARY
+            echo "2. Create your admin account" >> $GITHUB_STEP_SUMMARY
+            echo "3. Configure your domain in Settings -> Web Server" >> $GITHUB_STEP_SUMMARY
+            echo "4. Run the \`harden.yml\` playbook via workflow dispatch" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Security Hardening Applied" >> $GITHUB_STEP_SUMMARY
+            echo "- Port 3000 is now closed" >> $GITHUB_STEP_SUMMARY
+            echo "- fail2ban is active" >> $GITHUB_STEP_SUMMARY
+            echo "- Access Dokploy via your configured domain only" >> $GITHUB_STEP_SUMMARY
+          fi

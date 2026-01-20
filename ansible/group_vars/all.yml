@@ -1,0 +1,45 @@
+---
+# Shared variables for all hosts
+
+# System packages to install
+system_packages:
+  - curl
+  - wget
+  - git
+  - ufw
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - apt-transport-https
+  - software-properties-common
+
+# UFW firewall configuration
+ufw_default_incoming_policy: deny
+ufw_default_outgoing_policy: allow
+
+# Ports to open initially (before domain setup)
+ufw_allowed_ports_initial:
+  - { port: 22, proto: tcp, comment: "SSH" }
+  - { port: 80, proto: tcp, comment: "HTTP" }
+  - { port: 443, proto: tcp, comment: "HTTPS" }
+  - { port: 3000, proto: tcp, comment: "Dokploy Dashboard (temporary)" }
+
+# Ports after security hardening (after domain is configured)
+ufw_allowed_ports_hardened:
+  - { port: 22, proto: tcp, comment: "SSH" }
+  - { port: 80, proto: tcp, comment: "HTTP" }
+  - { port: 443, proto: tcp, comment: "HTTPS" }
+
+# Dokploy configuration
+dokploy_install_script_url: "https://dokploy.com/install.sh"
+# Checksum of the install script (update when script version changes)
+# To get checksum: curl -sL https://dokploy.com/install.sh | sha256sum
+# Set to empty string to skip verification (not recommended for production)
+dokploy_install_script_checksum: ""
+dokploy_dashboard_port: 3000
+
+# Security hardening
+install_fail2ban: true
+fail2ban_bantime: 3600
+fail2ban_findtime: 600
+fail2ban_maxretry: 5

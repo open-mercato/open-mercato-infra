@@ -1,0 +1,70 @@
+---
+# Main Dokploy Deployment Playbook
+#
+# This playbook installs and configures Dokploy on a fresh Ubuntu 24.04 server.
+# It handles system updates, firewall configuration, and Dokploy installation.
+#
+# Usage:
+#   ansible-playbook -i inventory/production.ini playbook.yml \
+#     -e "ansible_host=YOUR_SERVER_IP" \
+#     -e "ansible_user=root"
+#
+# Or via GitHub Actions (automatic on push to main)
+
+- name: Deploy Dokploy
+  hosts: dokploy
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Validate required variables are set
+      ansible.builtin.assert:
+        that:
+          - ansible_host is defined
+          - ansible_host | length > 0
+          - ansible_host != 'dokploy_server'
+        fail_msg: |
+          Required variable 'ansible_host' is not set or invalid.
+          Please provide it via -e "ansible_host=YOUR_SERVER_IP"
+        success_msg: "Required variables validated"
+
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Starting Dokploy Deployment
+          ============================================
+          Target Host: {{ ansible_host }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          ============================================
+
+    - name: Verify we're running on Ubuntu
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+        fail_msg: "This playbook is designed for Ubuntu servers only"
+        success_msg: "Ubuntu detected - proceeding with installation"
+
+  roles:
+    - role: dokploy
+
+  post_tasks:
+    - name: Final deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Deployment Complete!
+          ============================================
+          Dokploy Dashboard: http://{{ ansible_host }}:3000
+
+          Next Steps:
+          1. Open http://{{ ansible_host }}:3000 in your browser
+          2. Create your admin account
+          3. Go to Settings -> Web Server
+          4. Configure your domain and SSL
+          5. Once domain is working, run the security hardening:
+
+             ansible-playbook -i inventory/production.ini harden.yml \
+               -e "ansible_host={{ ansible_host }}" \
+               -e "ansible_user={{ ansible_user }}"
+          ============================================

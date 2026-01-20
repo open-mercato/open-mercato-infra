@@ -1,0 +1,198 @@
+name: Preview Ansible Changes
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ansible/**'
+      - '.github/workflows/preview.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: 'Playbook to preview'
+        required: true
+        default: 'playbook.yml'
+        type: choice
+        options:
+          - playbook.yml
+          - harden.yml
+
+env:
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+  ANSIBLE_FORCE_COLOR: "True"
+
+jobs:
+  preview:
+    name: Preview Changes (Dry Run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Install Ansible Galaxy collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Install sshpass (for passphrase-protected keys)
+        if: ${{ secrets.SSH_KEY_PASSPHRASE != '' }}
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Set up SSH agent
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Start ssh-agent
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+          # Add key to agent (supports passphrase via SSH_KEY_PASSPHRASE secret)
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]; then
+            SSHPASS="${{ secrets.SSH_KEY_PASSPHRASE }}" sshpass -e -P "passphrase" ssh-add ~/.ssh/deploy_key
+          else
+            ssh-add ~/.ssh/deploy_key
+          fi
+          rm -f ~/.ssh/deploy_key
+
+      - name: Verify SSH connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "echo 'SSH connection successful'"
+
+      - name: Determine playbook to run
+        id: playbook
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "playbook=${{ github.event.inputs.playbook }}" >> $GITHUB_OUTPUT
+          else
+            echo "playbook=playbook.yml" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Ansible playbook (Check Mode)
+        id: ansible
+        working-directory: ansible
+        run: |
+          set +e
+          OUTPUT=$(ansible-playbook -i inventory/production.ini ${{ steps.playbook.outputs.playbook }} \
+            -e "ansible_host=${{ secrets.SERVER_IP }}" \
+            -e "ansible_user=${{ secrets.SERVER_USER }}" \
+            -e "skip_confirmation=true" \
+            --check --diff 2>&1)
+          EXIT_CODE=$?
+
+          # Save output to file for the comment step
+          echo "$OUTPUT" > /tmp/ansible_output.txt
+
+          # Save to step output (truncate if too long)
+          {
+            echo 'output<<EOF'
+            echo "$OUTPUT" | head -c 60000
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit $EXIT_CODE
+
+      - name: Cleanup SSH agent
+        if: always()
+        run: |
+          ssh-agent -k 2>/dev/null || true
+
+      - name: Create preview summary
+        if: always()
+        run: |
+          echo "## Ansible Preview Results :mag:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** Check (Dry Run) + Diff" >> $GITHUB_STEP_SUMMARY
+          echo "**Playbook:** ${{ steps.playbook.outputs.playbook }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Server:** ${{ secrets.SERVER_IP }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.ansible.outputs.exit_code }}" == "0" ]; then
+            echo "### ✅ Preview completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Preview completed with changes or warnings" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details><summary>Click to expand Ansible output</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/ansible_output.txt | head -c 60000 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `${{ steps.ansible.outputs.output }}`;
+            const exitCode = '${{ steps.ansible.outputs.exit_code }}';
+            const playbook = '${{ steps.playbook.outputs.playbook }}';
+
+            const statusEmoji = exitCode === '0' ? '✅' : '⚠️';
+            const statusText = exitCode === '0' ? 'Preview completed successfully' : 'Preview completed with changes or warnings';
+
+            const body = `## ${statusEmoji} Ansible Preview Results
+
+            **Mode:** Check (Dry Run) + Diff
+            **Playbook:** \`${playbook}\`
+            **Status:** ${statusText}
+
+            <details><summary>Click to expand Ansible output</summary>
+
+            \`\`\`
+            ${output.substring(0, 60000)}
+            \`\`\`
+
+            </details>
+
+            ---
+            *This is a preview only. No changes have been applied to the server.*
+            *Merge this PR to apply the changes via the deploy workflow.*`;
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Ansible Preview Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

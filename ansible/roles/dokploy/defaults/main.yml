@@ -1,0 +1,15 @@
+---
+# Default variables for the Dokploy role
+# Note: dokploy_install_script_url, dokploy_install_script_checksum,
+# and dokploy_dashboard_port are defined in group_vars/all.yml
+
+# Docker installation (Dokploy installer handles this, but we can verify)
+docker_required: true
+
+# System update settings
+system_update_cache: true
+system_upgrade_packages: true
+
+# UFW settings for initial setup
+configure_ufw: true
+ufw_enabled: true

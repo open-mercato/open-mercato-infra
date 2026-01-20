@@ -1,0 +1,44 @@
+---
+name: Ansible Syntax Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ansible/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  syntax-check:
+    name: Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Syntax check - playbook.yml
+        run: |
+          ansible-playbook --syntax-check ansible/playbook.yml
+
+      - name: Syntax check - harden.yml
+        run: |
+          ansible-playbook --syntax-check ansible/harden.yml
+
+      - name: Validate inventory syntax
+        run: |
+          ansible-inventory -i ansible/inventory/production.ini --list > /dev/null

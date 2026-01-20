@@ -1,0 +1,18 @@
+# Ansible-lint configuration
+
+# Exclude paths from linting
+exclude_paths:
+  - .github/
+
+# Skip specific rules if needed
+skip_list:
+  - yaml[line-length]  # Allow longer lines for readability
+
+# Enable additional checks
+enable_list:
+  - no-changed-when
+  - no-handler
+
+# Warn on these rules instead of failing
+warn_list:
+  - experimental

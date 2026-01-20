@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: security_hardening
+  author: Open Mercato
+  description: Security hardening for Dokploy servers (fail2ban, SSH, firewall, sysctl)
+  license: MIT
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - security
+    - hardening
+    - fail2ban
+    - ssh
+    - firewall
+
+dependencies:
+  - role: community.general
+  - role: ansible.posix
