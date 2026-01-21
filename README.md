@@ -152,6 +152,9 @@ After the first deployment:
 2. Create your admin account
 3. Complete the initial setup wizard
 
+> [!WARNING]
+> **Security Risk:** Your initial password is transmitted over HTTP (unencrypted). Use a temporary/throwaway password during setup. After configuring HTTPS with your domain, change it to a strong, unique password.
+
 ### 2. Domain Configuration
 
 Configure your domain in Dokploy:
