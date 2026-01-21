@@ -1,0 +1,58 @@
+# Ansible Infrastructure .gitignore
+
+# Ansible retry files
+*.retry
+
+# Ansible vault files and secrets
+*.vault
+*.vault.yml
+vault_password_file
+.vault_pass
+secrets.yml
+secrets.yaml
+
+# Local inventory overrides
+inventory/*.local
+inventory/local*
+
+# SSH keys (should never be committed)
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Environment files
+.env
+.env.*
+
+# Python virtual environments
+venv/
+.venv/
+env/
+.python-version
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test and cache files
+.cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Molecule (Ansible testing)
+.molecule/
+molecule/**/converge.yml.bak
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Local documentation
+CLAUDE.local.md

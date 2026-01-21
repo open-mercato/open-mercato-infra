@@ -1,0 +1,163 @@
+---
+# Security hardening tasks - Run AFTER domain is configured in Dokploy
+
+- name: Confirm domain is configured
+  ansible.builtin.pause:
+    prompt: |
+      ============================================
+      IMPORTANT: Before proceeding, ensure that:
+      1. You have configured your domain in Dokploy UI
+      2. SSL certificates are working (HTTPS access)
+      3. You can access Dokploy via your domain
+
+      Press ENTER to continue or Ctrl+C to abort...
+      ============================================
+  when: not (skip_confirmation | default(false))
+  tags:
+    - always
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    update_cache: true
+  when: install_fail2ban | default(true)
+  tags:
+    - fail2ban
+
+- name: Configure fail2ban jail.local
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+  when: install_fail2ban | default(true)
+  tags:
+    - fail2ban
+
+- name: Enable and start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+  when: install_fail2ban | default(true)
+  tags:
+    - fail2ban
+
+- name: Remove Dokploy dashboard port from UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ dokploy_dashboard_port | string }}"
+    proto: tcp
+    delete: true
+  when: security_hardening_remove_dashboard_port | default(true)
+  notify: Reload UFW
+  tags:
+    - firewall
+
+- name: Verify UFW rules after hardening
+  ansible.builtin.command: ufw status verbose
+  register: security_hardening_ufw_status
+  changed_when: false
+  tags:
+    - firewall
+    - verification
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "{{ security_hardening_ufw_status.stdout_lines }}"
+  tags:
+    - firewall
+    - verification
+
+- name: Configure SSH - Disable password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication {{ security_hardening_ssh_password_authentication }}"
+    state: present
+  notify: Restart SSH
+  tags:
+    - ssh
+
+- name: Configure SSH - Enable pubkey authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PubkeyAuthentication"
+    line: "PubkeyAuthentication {{ security_hardening_ssh_pubkey_authentication }}"
+    state: present
+  notify: Restart SSH
+  tags:
+    - ssh
+
+- name: Configure SSH - Root login setting
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PermitRootLogin"
+    line: "PermitRootLogin {{ security_hardening_ssh_permit_root_login }}"
+    state: present
+  notify: Restart SSH
+  tags:
+    - ssh
+
+- name: Configure SSH - Disable X11 forwarding
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?X11Forwarding"
+    line: "X11Forwarding no"
+    state: present
+  notify: Restart SSH
+  tags:
+    - ssh
+
+- name: Configure SSH - Limit authentication attempts
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?MaxAuthTries"
+    line: "MaxAuthTries 3"
+    state: present
+  notify: Restart SSH
+  tags:
+    - ssh
+
+- name: Apply sysctl hardening settings
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - { name: "net.ipv4.ip_forward", value: "0" }
+    - { name: "net.ipv4.conf.all.send_redirects", value: "0" }
+    - { name: "net.ipv4.conf.default.send_redirects", value: "0" }
+    - { name: "net.ipv4.conf.all.accept_redirects", value: "0" }
+    - { name: "net.ipv4.conf.default.accept_redirects", value: "0" }
+    - { name: "net.ipv4.conf.all.accept_source_route", value: "0" }
+    - { name: "net.ipv4.conf.default.accept_source_route", value: "0" }
+  when: security_hardening_apply_sysctl_hardening | default(true)
+  tags:
+    - sysctl
+
+- name: Display security hardening completion message
+  ansible.builtin.debug:
+    msg: |
+      ============================================
+      Security Hardening Complete!
+      ============================================
+      - Fail2ban: {{ 'Installed and configured' if install_fail2ban else 'Skipped' }}
+      - Port 3000: {{ 'Removed from firewall' if security_hardening_remove_dashboard_port else 'Still open' }}
+      - SSH: Password auth disabled, pubkey required
+      - SSH: X11 forwarding disabled, max auth tries limited
+      - Sysctl: Network hardening applied
+
+      Your Dokploy instance is now accessible only via:
+      - Your configured domain (HTTPS)
+      - SSH on port 22
+
+      The dashboard port 3000 is no longer accessible directly.
+      ============================================
+  tags:
+    - verification

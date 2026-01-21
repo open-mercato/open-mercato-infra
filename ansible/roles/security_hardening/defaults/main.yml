@@ -1,0 +1,15 @@
+---
+# Default variables for security hardening role
+# Note: install_fail2ban, fail2ban_*, and dokploy_dashboard_port
+# are defined in group_vars/all.yml
+
+# UFW - Remove Dokploy dashboard port after domain is configured
+security_hardening_remove_dashboard_port: true
+
+# SSH hardening
+security_hardening_ssh_permit_root_login: "prohibit-password"
+security_hardening_ssh_password_authentication: "no"
+security_hardening_ssh_pubkey_authentication: "yes"
+
+# Sysctl hardening (network security)
+security_hardening_apply_sysctl_hardening: true

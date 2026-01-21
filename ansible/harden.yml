@@ -1,0 +1,79 @@
+---
+# Security Hardening Playbook
+#
+# Run this playbook AFTER you have:
+# 1. Completed the initial Dokploy deployment
+# 2. Created your admin account in Dokploy
+# 3. Configured your domain in Settings -> Web Server
+# 4. Verified HTTPS access via your domain works
+#
+# This playbook will:
+# - Install and configure fail2ban
+# - Remove port 3000 from the firewall (Dokploy dashboard direct access)
+# - Harden SSH configuration
+#
+# Usage:
+#   ansible-playbook -i inventory/production.ini harden.yml \
+#     -e "ansible_host=YOUR_SERVER_IP" \
+#     -e "ansible_user=root"
+#
+# To skip the confirmation prompt (for automated runs):
+#   ansible-playbook -i inventory/production.ini harden.yml \
+#     -e "ansible_host=YOUR_SERVER_IP" \
+#     -e "ansible_user=root" \
+#     -e "skip_confirmation=true"
+
+- name: Security Hardening for Dokploy Server
+  hosts: dokploy
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Validate required variables are set
+      ansible.builtin.assert:
+        that:
+          - ansible_host is defined
+          - ansible_host | length > 0
+          - ansible_host != 'dokploy_server'
+        fail_msg: |
+          Required variable 'ansible_host' is not set or invalid.
+          Please provide it via -e "ansible_host=YOUR_SERVER_IP"
+        success_msg: "Required variables validated"
+
+    - name: Display hardening information
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Security Hardening
+          ============================================
+          Target Host: {{ ansible_host }}
+
+          This playbook will:
+          - Install fail2ban for SSH protection
+          - Remove port 3000 from firewall rules
+          - Harden SSH configuration
+          - Apply sysctl network hardening
+
+          WARNING: After this, you can only access Dokploy
+          via your configured domain (not IP:3000)
+          ============================================
+
+  roles:
+    - role: security_hardening
+
+  post_tasks:
+    - name: Final hardening summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          Security Hardening Complete!
+          ============================================
+          Your Dokploy server is now hardened.
+
+          Access Methods:
+          - Dokploy Dashboard: https://YOUR_CONFIGURED_DOMAIN
+          - SSH: ssh {{ ansible_user }}@{{ ansible_host }}
+
+          Port 3000 is now CLOSED.
+          Direct IP access to dashboard is DISABLED.
+          ============================================
