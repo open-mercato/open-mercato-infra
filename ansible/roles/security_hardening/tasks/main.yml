@@ -52,14 +52,14 @@
     port: "{{ dokploy_dashboard_port | string }}"
     proto: tcp
     delete: true
-  when: remove_dashboard_port | default(true)
+  when: security_hardening_remove_dashboard_port | default(true)
   notify: Reload UFW
   tags:
     - firewall
 
 - name: Verify UFW rules after hardening
   ansible.builtin.command: ufw status verbose
-  register: ufw_status
+  register: security_hardening_ufw_status
   changed_when: false
   tags:
     - firewall
@@ -67,7 +67,7 @@
 
 - name: Display UFW status
   ansible.builtin.debug:
-    msg: "{{ ufw_status.stdout_lines }}"
+    msg: "{{ security_hardening_ufw_status.stdout_lines }}"
   tags:
     - firewall
     - verification
@@ -76,7 +76,7 @@
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: "^#?PasswordAuthentication"
-    line: "PasswordAuthentication {{ ssh_password_authentication }}"
+    line: "PasswordAuthentication {{ security_hardening_ssh_password_authentication }}"
     state: present
   notify: Restart SSH
   tags:
@@ -86,7 +86,7 @@
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: "^#?PubkeyAuthentication"
-    line: "PubkeyAuthentication {{ ssh_pubkey_authentication }}"
+    line: "PubkeyAuthentication {{ security_hardening_ssh_pubkey_authentication }}"
     state: present
   notify: Restart SSH
   tags:
@@ -96,7 +96,7 @@
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: "^#?PermitRootLogin"
-    line: "PermitRootLogin {{ ssh_permit_root_login }}"
+    line: "PermitRootLogin {{ security_hardening_ssh_permit_root_login }}"
     state: present
   notify: Restart SSH
   tags:
@@ -137,7 +137,7 @@
     - { name: "net.ipv4.conf.default.accept_redirects", value: "0" }
     - { name: "net.ipv4.conf.all.accept_source_route", value: "0" }
     - { name: "net.ipv4.conf.default.accept_source_route", value: "0" }
-  when: apply_sysctl_hardening | default(true)
+  when: security_hardening_apply_sysctl_hardening | default(true)
   tags:
     - sysctl
 
@@ -148,7 +148,7 @@
       Security Hardening Complete!
       ============================================
       - Fail2ban: {{ 'Installed and configured' if install_fail2ban else 'Skipped' }}
-      - Port 3000: {{ 'Removed from firewall' if remove_dashboard_port else 'Still open' }}
+      - Port 3000: {{ 'Removed from firewall' if security_hardening_remove_dashboard_port else 'Still open' }}
       - SSH: Password auth disabled, pubkey required
       - SSH: X11 forwarding disabled, max auth tries limited
       - Sysctl: Network hardening applied

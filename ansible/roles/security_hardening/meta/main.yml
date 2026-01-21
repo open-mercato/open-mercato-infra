@@ -19,6 +19,4 @@ galaxy_info:
     - ssh
     - firewall
 
-dependencies:
-  - role: community.general
-  - role: ansible.posix
+dependencies: []

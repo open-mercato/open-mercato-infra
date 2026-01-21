@@ -4,12 +4,12 @@
 # and dokploy_dashboard_port are defined in group_vars/all.yml
 
 # Docker installation (Dokploy installer handles this, but we can verify)
-docker_required: true
+dokploy_docker_required: true
 
 # System update settings
-system_update_cache: true
-system_upgrade_packages: true
+dokploy_system_update_cache: true
+dokploy_system_upgrade_packages: true
 
 # UFW settings for initial setup
-configure_ufw: true
-ufw_enabled: true
+dokploy_configure_ufw: true
+dokploy_ufw_enabled: true

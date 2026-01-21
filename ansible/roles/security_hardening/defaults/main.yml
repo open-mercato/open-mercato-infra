@@ -4,12 +4,12 @@
 # are defined in group_vars/all.yml
 
 # UFW - Remove Dokploy dashboard port after domain is configured
-remove_dashboard_port: true
+security_hardening_remove_dashboard_port: true
 
 # SSH hardening
-ssh_permit_root_login: "prohibit-password"
-ssh_password_authentication: "no"
-ssh_pubkey_authentication: "yes"
+security_hardening_ssh_permit_root_login: "prohibit-password"
+security_hardening_ssh_password_authentication: "no"
+security_hardening_ssh_pubkey_authentication: "yes"
 
 # Sysctl hardening (network security)
-apply_sysctl_hardening: true
+security_hardening_apply_sysctl_hardening: true
