@@ -46,28 +46,68 @@
   tags:
     - fail2ban
 
-- name: Remove Dokploy dashboard port from UFW
-  community.general.ufw:
-    rule: allow
-    port: "{{ dokploy_dashboard_port | string }}"
-    proto: tcp
-    delete: true
+- name: Install iptables-persistent for rule persistence
+  ansible.builtin.apt:
+    name: iptables-persistent
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   when: security_hardening_remove_dashboard_port | default(true)
-  notify: Reload UFW
   tags:
     - firewall
 
-- name: Verify UFW rules after hardening
-  ansible.builtin.command: ufw status verbose
-  register: security_hardening_ufw_status
+- name: Block external access to Dokploy dashboard port (DOCKER-USER chain)
+  ansible.builtin.iptables:
+    chain: DOCKER-USER
+    protocol: tcp
+    destination_port: "{{ dokploy_dashboard_port }}"
+    jump: DROP
+    action: insert
+    rule_num: 1
+  when: security_hardening_remove_dashboard_port | default(true)
+  notify: Save iptables rules
+  tags:
+    - firewall
+
+- name: Allow localhost access to Dokploy dashboard port (insert before DROP)
+  ansible.builtin.iptables:
+    chain: DOCKER-USER
+    protocol: tcp
+    destination_port: "{{ dokploy_dashboard_port }}"
+    source: 127.0.0.1
+    jump: ACCEPT
+    action: insert
+    rule_num: 1
+  when: security_hardening_remove_dashboard_port | default(true)
+  notify: Save iptables rules
+  tags:
+    - firewall
+
+- name: Allow Docker network access to Dokploy dashboard port (for internal services)
+  ansible.builtin.iptables:
+    chain: DOCKER-USER
+    protocol: tcp
+    destination_port: "{{ dokploy_dashboard_port }}"
+    source: 172.16.0.0/12
+    jump: ACCEPT
+    action: insert
+    rule_num: 1
+  when: security_hardening_remove_dashboard_port | default(true)
+  notify: Save iptables rules
+  tags:
+    - firewall
+
+- name: Verify iptables DOCKER-USER chain rules
+  ansible.builtin.command: iptables -L DOCKER-USER -n -v --line-numbers
+  register: security_hardening_iptables_status
   changed_when: false
   tags:
     - firewall
     - verification
 
-- name: Display UFW status
+- name: Display iptables DOCKER-USER rules
   ansible.builtin.debug:
-    msg: "{{ security_hardening_ufw_status.stdout_lines }}"
+    msg: "{{ security_hardening_iptables_status.stdout_lines }}"
   tags:
     - firewall
     - verification
@@ -148,7 +188,7 @@
       Security Hardening Complete!
       ============================================
       - Fail2ban: {{ 'Installed and configured' if install_fail2ban else 'Skipped' }}
-      - Port 3000: {{ 'Removed from firewall' if security_hardening_remove_dashboard_port else 'Still open' }}
+      - Port 3000: {{ 'Blocked via iptables DOCKER-USER chain' if security_hardening_remove_dashboard_port else 'Still open' }}
       - SSH: Password auth disabled, pubkey required
       - SSH: X11 forwarding disabled, max auth tries limited
       - Sysctl: Network hardening applied
@@ -157,7 +197,8 @@
       - Your configured domain (HTTPS)
       - SSH on port 22
 
-      The dashboard port 3000 is no longer accessible directly.
+      The dashboard port 3000 is blocked for external access.
+      Internal Docker services can still reach it.
       ============================================
   tags:
     - verification
