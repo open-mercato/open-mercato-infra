@@ -9,7 +9,7 @@
 #
 # This playbook will:
 # - Install and configure fail2ban
-# - Remove port 3000 from the firewall (Dokploy dashboard direct access)
+# - Block external access to port 3000 via iptables (bypasses Docker's UFW bypass)
 # - Harden SSH configuration
 #
 # Usage:
@@ -50,7 +50,7 @@
 
           This playbook will:
           - Install fail2ban for SSH protection
-          - Remove port 3000 from firewall rules
+          - Block port 3000 via iptables (DOCKER-USER chain)
           - Harden SSH configuration
           - Apply sysctl network hardening
 
